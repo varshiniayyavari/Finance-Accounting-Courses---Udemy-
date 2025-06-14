@@ -39,6 +39,7 @@ def load_data():
         df['published_year'] = 0
     return df
 
+# Load the data before any reference to df
 df = load_data()
 
 # Sidebar for navigation and filters
