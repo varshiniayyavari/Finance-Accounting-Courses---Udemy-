@@ -23,45 +23,48 @@ st.markdown("""
 # Step 1: Load and Preprocess Data (before sidebar)
 @st.cache_data
 def load_data():
-    df = pd.read_csv('udemy_output_All_Finance__Accounting_p1_p626 (1).csv')
+    df = pd.read_csv('udemy_data.csv')  # <-- Make sure this file name matches your actual file
     df = df.dropna()
     if 'is_wishlisted' in df.columns:
         df = pd.get_dummies(df, columns=['is_wishlisted'], drop_first=True)
-    # Extract year from 'published_time' if it exists
     if 'published_time' in df.columns:
         try:
             df['published_year'] = pd.to_datetime(df['published_time'], errors='coerce').dt.year
         except Exception as e:
             st.warning(f"Could not parse 'published_time' column: {e}")
-            df['published_year'] = 0  # Default value if parsing fails
+            df['published_year'] = 0
     else:
         st.warning("'published_time' column not found. Trend analysis will be skipped.")
         df['published_year'] = 0
     return df
 
-# Load the data before any reference to df
-df = load_data()
+# Safely load the data
+try:
+    df = load_data()
+    st.write("✅ Data loaded successfully!", df.shape)
+except Exception as e:
+    st.error(f"❌ Error loading data: {e}")
+    st.stop()
 
-# Sidebar for navigation and filters
+# Sidebar for filters
 st.sidebar.header("Filters & Settings")
-min_rating = st.sidebar.slider("Minimum Average Rating", 0.0, 5.0, 0.0, 0.1)
-# Safely handle max value for lectures slider
+min_rating = st.sidebar.slider("Minimum Average Rating", 0.0, 5.0, 3.0, 0.1)
 max_lectures = int(df['num_published_lectures'].max()) if not df['num_published_lectures'].empty else 0
 min_lectures = st.sidebar.slider("Minimum Number of Lectures", 0, max_lectures, 0, 1)
 sort_by = st.sidebar.selectbox("Sort Top Courses By", ["num_subscribers", "avg_rating", "num_reviews"])
 
 # Title
 st.markdown('<p class="main-header">Udemy Finance & Accounting Courses Dashboard</p>', unsafe_allow_html=True)
-st.markdown("**Built for Internship Presentation - June 2025**")
+st.markdown("Built for Internship Presentation - June 2025")
 
 # Apply filters
 filtered_df = df[(df['avg_rating'] >= min_rating) & (df['num_published_lectures'] >= min_lectures)]
+st.write(f"🔍 Showing {filtered_df.shape[0]} rows after filtering")
 
 # Step 2: Train Model
 @st.cache_data
 def train_model(df):
-    required_features = ['avg_rating', 'num_reviews', 'num_published_lectures', 'discount_price__amount', 'price_detail__amount']
-    # Check for missing features
+    required_features = ['avg_rating', 'num_reviews', 'num_published_lectures']
     missing_features = [feat for feat in required_features if feat not in df.columns]
     if missing_features:
         st.error(f"Missing required features: {missing_features}")
@@ -77,25 +80,24 @@ def train_model(df):
     predictions = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred})
     return mse, r2, predictions
 
-# Check if filtered_df is empty
+# Run model if data exists
 if filtered_df.empty:
     st.warning("No data matches the selected filters. Please adjust the filters and try again.")
     mse, r2, predictions = None, None, None
 else:
     mse, r2, predictions = train_model(filtered_df)
 
-# Step 3: Dashboard Layout
 # Model Performance Section
 st.markdown('<p class="sub-header">Model Performance</p>', unsafe_allow_html=True)
 if mse is not None and r2 is not None:
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-        st.markdown(f"**Mean Squared Error**<br>{mse:,.2f}", unsafe_allow_html=True)
+        st.markdown(f"Mean Squared Error<br>{mse:,.2f}", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     with col2:
         st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-        st.markdown(f"**R-squared**<br>{r2:.2f}", unsafe_allow_html=True)
+        st.markdown(f"R-squared<br>{r2:.2f}", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("Model performance metrics unavailable due to empty filtered data.")
@@ -104,14 +106,14 @@ else:
 st.markdown('<p class="sub-header">Dataset Insights</p>', unsafe_allow_html=True)
 col3, col4 = st.columns(2)
 with col3:
-    st.write("**Summary Statistics**")
+    st.write("Summary Statistics")
     if not filtered_df.empty:
         summary = filtered_df[['num_subscribers', 'avg_rating', 'num_reviews', 'num_published_lectures']].describe()
         st.dataframe(summary.style.format("{:.2f}"))
     else:
         st.info("No data to display summary statistics.")
 with col4:
-    st.write("**Average Rating Distribution**")
+    st.write("Average Rating Distribution")
     if not filtered_df.empty:
         fig_hist = px.histogram(filtered_df, x='avg_rating', nbins=20, title="Distribution of Average Ratings")
         fig_hist.update_layout(xaxis_title="Average Rating", yaxis_title="Count")
@@ -119,7 +121,7 @@ with col4:
     else:
         st.info("No data to display histogram.")
 
-# Model Visualization Section
+# Model Predictions Section
 st.markdown('<p class="sub-header">Model Predictions</p>', unsafe_allow_html=True)
 if predictions is not None:
     fig_scatter = go.Figure()
@@ -132,7 +134,6 @@ if predictions is not None:
                               yaxis_title="Predicted Subscribers")
     st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # Download predictions
     buffer = io.StringIO()
     predictions.to_csv(buffer, index=False)
     st.download_button(label="Download Predictions", data=buffer.getvalue(), file_name="predictions.csv", mime="text/csv")
